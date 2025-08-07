@@ -139,7 +139,7 @@ class PointFootRoughCfg(BaseConfig):
         class scales:
             action_rate = -0.01
             ang_vel_xy = -0.05
-            base_height = -2.0
+            base_height = -0.02 # default:-2 在复杂地形可能起负作用
             collision = -50.0
             dof_acc = -2.5e-07
             feet_air_time = 0.0
@@ -147,6 +147,11 @@ class PointFootRoughCfg(BaseConfig):
             torques = -2.5e-05
             feet_distance = -100
             survival = 1
+            # 新增跟踪相关奖励
+            tracking_lin_vel = 4.0
+            tracking_ang_vel = 2.0
+            tracking_base_height = 1.0
+            orientation = -10.0
 
         base_height_target = 0.62
         soft_dof_pos_limit = 0.95  # percentage of urdf limits, values above this limit are penalized
@@ -158,6 +163,8 @@ class PointFootRoughCfg(BaseConfig):
         min_feet_air_time = 0.25
         max_feet_air_time = 0.65
         tracking_sigma = 0.25  # tracking reward = exp(-error^2/sigma)
+        ang_tracking_sigma = 0.25  # 跟踪角速度奖励的sigma
+        height_tracking_sigma = 0.01  # 跟踪base高度奖励的sigma
 
     class normalization:
         class obs_scales:
@@ -248,7 +255,7 @@ class PointFootRoughCfgPPO(BaseConfig):
         experiment_name = 'pointfoot_rough'
         run_name = ''
         # load and resume
-        resume = False
-        load_run = -1  # -1 = last run
-        checkpoint = -1  # -1 = last saved model
-        resume_path = None  # updated from load_run and chkpt
+        resume = True
+        load_run = "/home/zhengkr/limx_rl/pointfootGym/logs/pointfoot_rough/Aug05_22-51-42_"  # -1 = last run
+        checkpoint = 4000  # -1 = last saved model
+        resume_path = "/home/zhengkr/limx_rl/pointfootGym/logs/pointfoot_rough/Aug04_16-59-36_/model_4000.pt"  # updated from load_run and chkpt

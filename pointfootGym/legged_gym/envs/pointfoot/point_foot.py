@@ -1174,13 +1174,17 @@ class PointFoot:
     '''
     # 1. linear velocity tracking
     def _reward_tracking_lin_vel(self):
-        # Tracking the linear velocity command
-        pass
+        # Tracking of linear velocity commands (xy axes)
+        lin_vel_error = torch.sum(
+            torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1
+        )
+        return torch.exp(-lin_vel_error / self.cfg.rewards.tracking_sigma)
 
     # 2. angular velocity tracking
     def _reward_tracking_ang_vel(self):
-        # Tracking the angular velocity command
-        pass
+        # Tracking of angular velocity commands (yaw)
+        ang_vel_error = torch.square(self.commands[:, 2] - self.base_ang_vel[:, 2])
+        return torch.exp(-ang_vel_error / self.cfg.rewards.ang_tracking_sigma)
     
     # 3. base height tracking (typically, the target base height is set as a constant)
     def _reward_base_height(self):
@@ -1190,10 +1194,20 @@ class PointFoot:
 
     # but you can also treat the base height as a control target (by adding the base height to the commands)
     def _reward_tracking_base_height(self):
-        # Tracking the base height command
-        pass
+        # Tracking the base height command (assume commands[:, 3] is the base height target)
+        # 可选参数：height_tracking_sigma，base_height_target
+        height_tracking_sigma = getattr(self.cfg.rewards, 'height_tracking_sigma', 0.01)
+        if self.commands.shape[1] < 5:
+            # 没有 base height 命令，直接返回0
+            return torch.zeros(self.num_envs, device=self.device)
+        base_height_cmd = self.commands[:, 3]
+        # measured_heights 形状: (num_envs, n_points)，取均值
+        base_height = torch.mean(self.root_states[:, 2].unsqueeze(1) - self.measured_heights, dim=1)
+        height_error = base_height_cmd - base_height
+        return torch.exp(-torch.square(height_error) / height_tracking_sigma)
 
     # 4. flat orientation
     def _reward_orientation(self):
         # Penalize non flat base orientation
-        pass
+        reward = torch.sum(torch.square(self.projected_gravity[:, :2]), dim=1)
+        return reward
