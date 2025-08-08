@@ -70,6 +70,9 @@ def play(args):
     env_cfg.domain_rand.randomize_motor_torque = False
     env_cfg.domain_rand.randomize_default_dof_pos = False
     env_cfg.domain_rand.randomize_action_delay = False
+    
+    # Enable target visualization
+    env_cfg.commands.visualize_targets = True
 
     # prepare environment
     env, _ = task_registry.make_env(name=args.task, args=args, env_cfg=env_cfg)
@@ -133,7 +136,7 @@ def play(args):
         est = encoder(obs_history)
         actions = policy(torch.cat((est, obs, commands), dim=-1).detach())
 
-        env.commands[:, :] = commands_val
+        # env.commands[:, :] = commands_val
 
         obs, rews, dones, infos, obs_history, commands, _ = env.step(
             actions.detach()
@@ -171,7 +174,7 @@ def play(args):
                     "dof_torque": env.torques[robot_index, joint_index].item(),
                     "command_x": env.commands[robot_index, 0].item(),
                     "command_y": env.commands[robot_index, 1].item(),
-                    "command_yaw": env.commands[robot_index, 2].item(),
+                    # "command_yaw": env.commands[robot_index, 2].item(),
                     "base_vel_x": env.base_lin_vel[robot_index, 0].item(),
                     "base_vel_y": env.base_lin_vel[robot_index, 1].item(),
                     "base_vel_z": env.base_lin_vel[robot_index, 2].item(),
