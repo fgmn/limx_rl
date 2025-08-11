@@ -1168,6 +1168,9 @@ class BaseTask:
         self.last_root_vel[:] = self.root_states[:, 7:13]
         self.last_base_position[:] = self.base_position[:]
         self.last_foot_positions[:] = self.foot_positions[:]
+
+        if self.viewer and self.enable_viewer_sync and self.cfg.terrain.debug_viz:
+            self._draw_debug_vis()
         
     def _action_clip(self, actions):
         # 根据电机力矩限制和当前关节状态，转换为安全的目标位置指令
@@ -1632,3 +1635,24 @@ class BaseTask:
             self.env_origins[:, 0] = spacing * xx.flatten()[: self.num_envs]
             self.env_origins[:, 1] = spacing * yy.flatten()[: self.num_envs]
             self.env_origins[:, 2] = 0.0
+
+    def _draw_debug_vis(self):
+        """ Draws visualizations for dubugging (slows down simulation a lot).
+            Default behaviour: draws height measurement points
+        """
+        # draw height lines
+        if not self.terrain.cfg.measure_heights and not self.terrain.cfg.critic_measure_heights:
+            return
+        # self.gym.clear_lines(self.viewer)
+        sphere_geom = gymutil.WireframeSphereGeometry(0.02, 4, 4, None, color=(1, 1, 0))
+        for i in range(self.num_envs):
+            base_pos = (self.root_states[i, :3]).cpu().numpy()
+            heights = self.measured_heights[i].cpu().numpy()
+            height_points = quat_apply_yaw(self.base_quat[i].repeat(heights.shape[0]),
+                                        self.height_points[i]).cpu().numpy()
+            for j in range(heights.shape[0]):
+                x = height_points[j, 0] + base_pos[0]
+                y = height_points[j, 1] + base_pos[1]
+                z = heights[j]
+                sphere_pose = gymapi.Transform(gymapi.Vec3(x, y, z), r=None)
+                gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[i], sphere_pose)

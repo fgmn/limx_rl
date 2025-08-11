@@ -32,7 +32,7 @@ from legged_gym import LEGGED_GYM_ROOT_DIR
 
 import os
 robot_type = os.getenv("ROBOT_TYPE")
-
+import numpy as np
 
 class BipedCfgPF(BaseConfig):
 
@@ -61,8 +61,8 @@ class BipedCfgPF(BaseConfig):
         # rough terrain only:
         measure_heights = False
         critic_measure_heights = True
-        measured_points_x = [round(x * 0.1, 2) for x in range(-6, 7)]  # -0.6 到 0.6，步长 0.1
-        measured_points_y = [round(y * 0.1, 2) for y in range(-4, 5)]  # -0.4 到 0.4，步长 0.1
+        measured_points_x = [round(x, 2) for x in np.linspace(-3.15, 3.15, 64)]
+        measured_points_y = [round(y, 2) for y in np.linspace(-3.15, 3.15, 64)]
         selected = False  # select a unique terrain type and pass all arguments
         terrain_kwargs = None  # Dict of arguments for selected terrain
         max_init_terrain_level = 5 + 4  # starting curriculum state
@@ -78,6 +78,7 @@ class BipedCfgPF(BaseConfig):
         )
 
         # save_height_samples = True
+        debug_viz = False
 
     class commands:
         curriculum = True
