@@ -784,6 +784,7 @@ class BaseTask:
             self.terrain.triangles.flatten(order="C"),
             tm_params,
         )
+        # 全局的高程数据
         self.height_samples = (
             torch.tensor(self.terrain.heightsamples)
             .view(self.terrain.tot_rows, self.terrain.tot_cols)

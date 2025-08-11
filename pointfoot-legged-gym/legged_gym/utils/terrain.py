@@ -77,6 +77,10 @@ class Terrain:
             self.randomized_terrain()
 
         self.heightsamples = self.height_field_raw
+        if hasattr(self.cfg, "save_height_samples") and self.cfg.save_height_samples:
+            np.save("heightsamples.npy", self.heightsamples)
+            print(f"heightsamples saved to heightsamples.npy, shape: {self.heightsamples.shape}, dtype: {self.heightsamples.dtype}")
+        
         if self.type == "trimesh":
             (
                 self.vertices,

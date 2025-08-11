@@ -51,7 +51,7 @@ def play(args):
     env_cfg, train_cfg = task_registry.get_cfgs(name=args.task)
     # override some parameters for testing
     env_cfg.env.episode_length_s = 30
-    env_cfg.env.num_envs = min(env_cfg.env.num_envs, 100)
+    env_cfg.env.num_envs = min(env_cfg.env.num_envs, 10)
 
     env_cfg.terrain.num_rows = 10
     env_cfg.terrain.num_cols = 20
@@ -174,7 +174,8 @@ def play(args):
                     "dof_torque": env.torques[robot_index, joint_index].item(),
                     "command_x": env.commands[robot_index, 0].item(),
                     "command_y": env.commands[robot_index, 1].item(),
-                    # "command_yaw": env.commands[robot_index, 2].item(),
+                    # "command_yaw": env.commands[robot_index, 2].item(),   
+                    "command_yaw": env.commands[robot_index, 1].item(),     # placeholder
                     "base_vel_x": env.base_lin_vel[robot_index, 0].item(),
                     "base_vel_y": env.base_lin_vel[robot_index, 1].item(),
                     "base_vel_z": env.base_lin_vel[robot_index, 2].item(),

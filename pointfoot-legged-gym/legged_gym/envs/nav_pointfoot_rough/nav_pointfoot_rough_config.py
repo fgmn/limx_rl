@@ -33,7 +33,9 @@ from legged_gym import LEGGED_GYM_ROOT_DIR
 import os
 robot_type = os.getenv("ROBOT_TYPE")
 
+
 class BipedCfgPF(BaseConfig):
+
     class env:
         num_envs = 8192
         num_observations = 30  # 更新：移除了相对目标位置，现在obs_buf是30维
@@ -59,22 +61,8 @@ class BipedCfgPF(BaseConfig):
         # rough terrain only:
         measure_heights = False
         critic_measure_heights = True
-        measured_points_x = [
-            -0.6,
-            -0.5,
-            -0.4,
-            -0.3,
-            -0.2,
-            -0.1,
-            0.0,
-            0.1,
-            0.2,
-            0.3,
-            0.4,
-            0.5,
-            0.6,
-        ]  # 1mx1.6m rectangle (without center line)
-        measured_points_y = [-0.4, -0.3, -0.2, -0.1, 0.0, 0.1, 0.2, 0.3, 0.4]
+        measured_points_x = [round(x * 0.1, 2) for x in range(-6, 7)]  # -0.6 到 0.6，步长 0.1
+        measured_points_y = [round(y * 0.1, 2) for y in range(-4, 5)]  # -0.4 到 0.4，步长 0.1
         selected = False  # select a unique terrain type and pass all arguments
         terrain_kwargs = None  # Dict of arguments for selected terrain
         max_init_terrain_level = 5 + 4  # starting curriculum state
@@ -88,6 +76,8 @@ class BipedCfgPF(BaseConfig):
         slope_treshold = (
             0.75  # slopes above this threshold will be corrected to vertical surfaces
         )
+
+        # save_height_samples = True
 
     class commands:
         curriculum = True
@@ -110,10 +100,10 @@ class BipedCfgPF(BaseConfig):
         zero_command_prob = 0.0
 
         # 目标点可视化选项
-        visualize_targets = False   # 是否在仿真中显示目标点
+        visualize_targets = False  # 是否在仿真中显示目标点
         target_marker_color = [1.0, 0.0, 0.0]  # 目标点颜色 (RGB, 红色)
-        target_marker_size = 0.1   # 目标点大小 [m]
-        target_marker_height = 0.5 # 目标点高度偏移 [m]
+        target_marker_size = 0.1  # 目标点大小 [m]
+        target_marker_height = 0.5  # 目标点高度偏移 [m]
 
         class ranges:
             lin_vel_x = [-1.0, 1.0]  # min max [m/s]
@@ -122,7 +112,7 @@ class BipedCfgPF(BaseConfig):
             # lin_vel_y = [-1.7, 1.7]  # min max [m/s]
             ang_vel_yaw = [-1, 1]  # min max [rad/s]
             heading = [-3.14159, 3.14159]
-            
+
             target_x = [-8.0, 8.0]  # 目标点 x 坐标范围 [m]
             target_y = [-8.0, 8.0]  # 目标点 y 坐标范围 [m]
 
@@ -241,6 +231,7 @@ class BipedCfgPF(BaseConfig):
         delay_ms_range = [0, 20]
 
     class rewards:
+
         class scales:
             # termination related rewards
             keep_balance = 1.0
@@ -250,11 +241,12 @@ class BipedCfgPF(BaseConfig):
             tracking_ang_vel = 0.
 
             # navigation related rewards (替换速度跟踪奖励)
-            navigation_task = 200.0     # 主任务奖励：到达目标位置
-            navigation_bias = 0.5      # 辅助奖励：朝目标方向移动
+            navigation_task = 15.0  # 主任务奖励：到达目标位置
+            navigation_bias = 1.0  # 辅助奖励：朝目标方向移动
+            stalling_penalty = 8.0  # 停滞惩罚：防止在距离目标较远时停滞不动
 
             # regulation related rewards
-            base_height = -2
+            base_height = -10
             lin_vel_z = -0.5
             ang_vel_xy = -0.05
             torques = -0.00008
@@ -273,12 +265,12 @@ class BipedCfgPF(BaseConfig):
         only_positive_rewards = False  # if true negative total rewards are clipped at zero (avoids early termination problems)
         clip_reward = 100
         clip_single_reward = 5
-        
+
         # 导航任务相关参数
-        reward_duration = 5.0      # T_r: 奖励持续时间 [s]
-        bias_removal_threshold = 0.5  # 当主任务奖励达到最大值的50%时移除辅助奖励
+        reward_duration = 15.0  # T_r: 奖励持续时间 [s]
+        bias_removal_threshold = 0.75  # 当主任务奖励达到最大值的50%时移除辅助奖励
         success_distance_threshold = 0.5  # 到达目标的距离阈值 [m]
-        
+
         # 原有跟踪参数保留，可能在其他地方使用
         tracking_sigma = 0.2  # tracking reward = exp(-error^2/sigma)
         ang_tracking_sigma = 0.25  # tracking reward = exp(-error^2/sigma)
@@ -288,7 +280,7 @@ class BipedCfgPF(BaseConfig):
         )
         soft_dof_vel_limit = 1.0
         soft_torque_limit = 0.8
-        base_height_target = 0.68 # 0.58
+        base_height_target = 0.68  # 0.58
         feet_height_target = 0.10
         min_feet_distance = 0.115
         about_landing_threshold = 0.08
@@ -299,6 +291,7 @@ class BipedCfgPF(BaseConfig):
         gait_height_sigma = 0.005
 
     class normalization:
+
         class obs_scales:
             lin_vel = 2.0
             ang_vel = 0.25
@@ -409,6 +402,6 @@ class BipedCfgPPOPF(BaseConfig):
         run_name = ""
         # load and resume
         resume = False
-        load_run = "/home/zhengkr/limx_rl/pointfoot-legged-gym/logs/pointfoot_rough/PF_TRON1A/Aug06_20-19-06_"  # -1 = last run
-        checkpoint = 4000  # -1 = last saved model
+        load_run = "/home/zhengkr/limx_rl/pointfoot-legged-gym/logs/nav_pointfoot_rough/PF_TRON1A/Aug08_17-06-36_"  # -1 = last run
+        checkpoint = -1  # -1 = last saved model
         resume_path = "None"  # updated from load_run and chkpt

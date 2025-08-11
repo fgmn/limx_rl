@@ -4,7 +4,6 @@ import os
 import math
 
 from isaacgym.torch_utils import *
-from isaacgym.torch_utils import *
 from isaacgym import gymtorch, gymapi, gymutil
 
 from legged_gym import LEGGED_GYM_ROOT_DIR, envs
@@ -94,13 +93,14 @@ class BipedPF(BaseTask):
         #     env_id = 0  # First environment
         #     robot_pos = self.root_states[env_id, :2]  # x, y position of robot
         #     target_pos = self.global_targets[env_id]  # 全局目标位置
-        #     relative_target = self.commands[env_id, :2] * self.commands_scale  # 相对目标位置
+        #     relative_distance = self.commands[env_id, 0] * self.commands_scale[0]  # 相对距离
+        #     relative_angle = self.commands[env_id, 1] * self.commands_scale[1]  # 相对角度
         #     distance_to_target = torch.norm(target_pos - robot_pos).item()  # 使用全局位置计算距离，与奖励函数一致
         #     reward = self.rew_buf[env_id].item()
         #     done = self.reset_buf[env_id].item()
         #     print(f"[DEBUG Step {self.step_count}] Env 0: Robot pos=({robot_pos[0]:.2f}, {robot_pos[1]:.2f}), "
         #           f"Target pos=({target_pos[0]:.2f}, {target_pos[1]:.2f}), "
-        #           f"Relative=({relative_target[0]:.2f}, {relative_target[1]:.2f}), "
+        #           f"Relative=(dist={relative_distance:.2f}m, angle={relative_angle:.2f}rad), "
         #           f"Distance={distance_to_target:.2f}m, Reward={reward:.3f}, Done={done}")
         
         # if not hasattr(self, 'step_count'):
@@ -116,7 +116,7 @@ class BipedPF(BaseTask):
             self.reset_buf,
             self.extras,
             self.obs_history,
-            self.commands[:, :2] * self.commands_scale,  # 返回 x, y 目标位置
+            self.commands[:, :2] * self.commands_scale,  # 返回 [距离, 角度]
             self.critic_obs_buf # make sure critic_obs update in every for loop
         )
 
@@ -147,11 +147,9 @@ class BipedPF(BaseTask):
         self.global_targets[env_ids, 0] = target_x
         self.global_targets[env_ids, 1] = target_y
         
-        # 初始计算相对位置作为命令（将在每个step中更新）
-        relative_x = distances * torch.cos(angles)
-        relative_y = distances * torch.sin(angles)
-        self.commands[env_ids, 0] = relative_x
-        self.commands[env_ids, 1] = relative_y  
+        # 直接调用_update_commands来计算精确的极坐标命令
+        # 这确保了与每个step中的命令更新保持完全一致
+        self._update_commands()  
         
         # 更新目标点可视化（如果启用）
         if self.cfg.commands.visualize_targets and not self.headless:
@@ -222,7 +220,7 @@ class BipedPF(BaseTask):
         noise_vec[18:24] = 0.0  # previous actions
         noise_vec[24:26] = 0.0  # clock signals (sin, cos)
         noise_vec[26:30] = 0.0  # gait parameters
-        # 移除了相对目标位置的噪声设置，现在观测是30维
+        # 移除了相对目标位置的噪声设置，现在观测是30维（不包含极坐标命令）
         return noise_vec
     
     def reset_idx(self, env_ids):
@@ -395,6 +393,7 @@ class BipedPF(BaseTask):
         
         公式：r_bias = (x_dot_b · (x_b* - x_b)) / (||x_dot_b|| * ||x_b* - x_b||)
         
+        注意：统一在机器人本体坐标系下计算，确保方向一致性
         当主任务奖励达到最大值的50%后，此奖励会被移除
         """
         # 检查是否应该移除辅助奖励
@@ -406,29 +405,64 @@ class BipedPF(BaseTask):
             # 记录最大任务奖励
             self.max_task_reward = 1.0 / self.cfg.rewards.reward_duration
         
-        # 直接使用机器人位置和全局目标位置计算
+        # 计算全局坐标系下的目标方向
         current_pos = self.root_states[:, :2]  # x, y 坐标（全局）
         target_pos = self.global_targets       # 全局目标位置
-        current_vel = self.base_lin_vel[:, :2] # x, y 速度
+        to_target_global = target_pos - current_pos
         
-        # 计算到目标的向量
-        to_target = target_pos - current_pos
-        to_target_norm = torch.norm(to_target, dim=1)
-        vel_norm = torch.norm(current_vel, dim=1)
+        # 将目标方向转换到机器人本体坐标系（添加z=0维度进行旋转变换）
+        to_target_3d = torch.cat([to_target_global, torch.zeros_like(to_target_global[:, :1])], dim=1)
+        to_target_local = quat_rotate_inverse(self.base_quat, to_target_3d)[:, :2]
         
-        # 避免除零
-        valid_mask = (to_target_norm > 1e-6) & (vel_norm > 1e-6)
+        # 机器人本体坐标系下的速度
+        current_vel_local = self.base_lin_vel[:, :2].clone()
+        current_vel_local[:, 1] = 0
+
+        # 计算在统一坐标系（机器人本体）下的方向一致性
+        to_target_norm = torch.norm(to_target_local, dim=1)
+        vel_norm = torch.norm(current_vel_local, dim=1)
+        
+        # 仅在有效条件下计算奖励，避免除零错误
+        valid_mask = (to_target_norm > 0.5) & (vel_norm > 1e-6) & (current_vel_local[:, 0] > 1e-6)
         
         reward = torch.zeros(self.num_envs, device=self.device)
         
         if torch.any(valid_mask):
-            # 计算方向一致性
-            cos_similarity = torch.sum(current_vel[valid_mask] * to_target[valid_mask], dim=1) / (
+            # 在机器人本体坐标系下计算方向一致性
+            # 正值：朝目标方向移动，负值：背离目标方向移动
+            cos_similarity = torch.sum(current_vel_local[valid_mask] * to_target_local[valid_mask], dim=1) / (
                 vel_norm[valid_mask] * to_target_norm[valid_mask]
             )
             reward[valid_mask] = cos_similarity
         
         return reward
+
+    def _reward_stalling_penalty(self):
+        """停滞惩罚：当机器人远离目标却停滞不动时给予惩罚
+        
+        公式：r_stall = -1 如果 ||dot{x}_b|| < 0.1 m/s 且 ||x_b - x_b*|| > 0.5 m
+                       0  否则
+        
+        这个惩罚用于抵消PPO折扣因子导致的"延迟行为"问题，
+        防止策略学到"等到最后一刻才冲向目标"的行为。
+        """
+        # 计算当前机器人位置和目标位置
+        current_pos = self.root_states[:, :2]  # x, y 坐标（全局）
+        target_pos = self.global_targets       # 全局目标位置
+        
+        # 计算距离目标的距离
+        distance_to_target = torch.norm(target_pos - current_pos, dim=1)
+        
+        # 计算机身线速度（在水平面上）
+        linear_velocity = torch.norm(self.base_lin_vel[:, :2], dim=1)
+        
+        # 停滞条件：速度小于0.1 m/s 且距离目标超过0.5 m
+        is_stalling = (linear_velocity < 0.1) & (distance_to_target > 0.5)
+        
+        # 如果满足停滞条件，则给予-1惩罚，否则为0
+        penalty = torch.where(is_stalling, -1.0, 0.0)
+        
+        return penalty
 
     def _reward_tracking_lin_vel(self):
         # 导航任务中不使用速度跟踪，返回零奖励
@@ -502,9 +536,9 @@ class BipedPF(BaseTask):
         self.task_start_time = torch.zeros(self.num_envs, device=self.device)
         self.max_task_reward = 1.0 / self.cfg.rewards.reward_duration
         
-        # 为导航任务重新定义命令缩放（只有目标位置）
+        # 为导航任务重新定义命令缩放（距离和角度）
         self.commands_scale = torch.tensor(
-            [1.0, 1.0],  # x, y 位置不缩放
+            [0.5, 1.0],  # [距离(m), 角度(rad)]
             device=self.device,
             requires_grad=False,
         )
@@ -646,10 +680,26 @@ class BipedPF(BaseTask):
     def _update_commands(self):
         """每步重新计算相对位置命令
         
-        将全局目标位置转换为相对于当前机器人位置的向量
+        将全局目标位置转换为机器人本体坐标系下的极坐标形式
+        输出格式：[距离, 角度]
+        - 距离：到目标的直线距离（米）
+        - 角度：目标相对于机器人前进方向的角度（弧度，范围 [-π, π]）
+        这确保了命令与导航偏置奖励函数使用相同的坐标系
         """
-        # 获取当前机器人位置
+        # 获取当前机器人位置（全局坐标）
         current_pos = self.root_states[:, :2]  # x, y 坐标（全局）
         
-        # 计算相对位置命令 = 全局目标位置 - 当前位置
-        self.commands[:, :2] = self.global_targets - current_pos
+        # 计算全局坐标系下的目标方向
+        to_target_global = self.global_targets - current_pos
+        
+        # 将目标方向转换到机器人本体坐标系（添加z=0维度进行旋转变换）
+        to_target_3d = torch.cat([to_target_global, torch.zeros_like(to_target_global[:, :1])], dim=1)
+        to_target_local = quat_rotate_inverse(self.base_quat, to_target_3d)[:, :2]
+        
+        # 将本体坐标系下的相对位置转换为极坐标（角度和模长）
+        distance = torch.norm(to_target_local, dim=1)  # 距离（模长）
+        angle = torch.atan2(to_target_local[:, 1], to_target_local[:, 0])  # 角度（弧度）
+        
+        # 更新命令为极坐标形式：[距离, 角度]
+        self.commands[:, 0] = distance
+        self.commands[:, 1] = angle
