@@ -290,6 +290,8 @@ class BipedPFCTS(BaseTask):
         contact_filt = torch.logical_or(contact, self.last_contacts) 
         self.last_contacts = contact
 
+        self.base_height = self._get_base_heights()
+
         # note that observation noise need to modified accordingly !!!
         obs_buf = torch.cat(
             (
@@ -306,21 +308,23 @@ class BipedPFCTS(BaseTask):
         )
 
         # DEBUG
-        #  print("base_lin_vel", self.base_lin_vel.shape)
-        #  print("contact_filt", contact_filt.shape, contact_filt.float() - 0.5)
-        #  print("torques", self.torques.shape)
-        #  print("base_mass", self.base_mass.unsqueeze(-1).shape, self.base_mass.shape)
-        #  print("base_com", self.base_com.shape, self.base_com)
-        #  print("p_gains", self.p_gains.shape, self.p_gains)
-        #  print("d_gains", self.d_gains.shape, self.d_gains)
-        #  print("torques_scale", self.torques_scale.shape, self.torques_scale)
-        #  print("restitution_coef", self.restitution_coef.shape, self.restitution_coef)
-        #  print("friction_coef", self.friction_coef.shape, self.friction_coef)
+        print("base_lin_vel", self.base_lin_vel.shape)
+        print("contact_filt", contact_filt.shape, contact_filt.float() - 0.5)
+        print("torques", self.torques.shape)
+        print("base_height", self.base_height.shape, self.base_height)
+        print("base_mass", self.base_mass.unsqueeze(-1).shape, self.base_mass.shape)
+        print("base_com", self.base_com.shape, self.base_com)
+        print("p_gains", self.p_gains.shape, self.p_gains)
+        print("d_gains", self.d_gains.shape, self.d_gains)
+        print("torques_scale", self.torques_scale.shape, self.torques_scale)
+        print("restitution_coef", self.restitution_coef.shape, self.restitution_coef)
+        print("friction_coef", self.friction_coef.shape, self.friction_coef)
 
-        critic_obs_buf = torch.cat((  # in total: 3 + 2 + 6 + 1 + 3 + 6 + 6 + 6 + 1 + 1 = 35
+        critic_obs_buf = torch.cat((  # in total: 3 + 2 + 6 + 1 + 1 + 3 + 6 + 6 + 6 + 1 + 1 = 35
             self.base_lin_vel * self.obs_scales.lin_vel,  # 3
             contact_filt.float() - 0.5,  # 2
             self.torques,  # 6
+            self.base_height.unsqueeze(-1),  # 1
             self.base_mass.unsqueeze(-1),  # 1
             self.base_com,  # 3
             self.p_gains,  # 6
@@ -359,8 +363,7 @@ class BipedPFCTS(BaseTask):
 
     def _reward_base_height(self):
         # Penalize base height away from target
-        base_height = self._get_base_heights()
-        return torch.square(base_height - self.cfg.rewards.base_height_target)
+        return torch.square(self.base_height - self.cfg.rewards.base_height_target)
 
     def _reward_torques(self):
         # Penalize torques

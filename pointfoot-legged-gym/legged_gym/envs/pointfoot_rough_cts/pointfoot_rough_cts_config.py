@@ -31,7 +31,8 @@ from legged_gym.envs.base.base_config import BaseConfig
 from legged_gym import LEGGED_GYM_ROOT_DIR
 
 import os
-robot_type = os.getenv("ROBOT_TYPE")
+#  robot_type = os.getenv("ROBOT_TYPE")
+robot_type = "PF_TRON1A"
 
 class BipedCfgPFCTS(BaseConfig):
     class env:
@@ -39,7 +40,7 @@ class BipedCfgPFCTS(BaseConfig):
         obs_history_length = 10  # number of observations stacked together
         num_observations = 30
         num_height_samples = 117
-        num_critic_observations = 35 + num_observations + num_height_samples
+        num_critic_observations = 36 + num_observations + num_height_samples
         num_actions = 6
         env_spacing = 3.0  # not used with heightfields/trimeshes
         send_timeouts = True  # send time out information to the algorithm
