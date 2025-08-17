@@ -89,6 +89,8 @@ class BipedCfgPF(BaseConfig):
             0.75  # slopes above this threshold will be corrected to vertical surfaces
         )
 
+        debug_viz = False
+
     class commands:
         curriculum = True
         smooth_max_lin_vel_x = 2.0
@@ -97,14 +99,16 @@ class BipedCfgPF(BaseConfig):
         non_smooth_max_lin_vel_y = 1.0
         max_ang_vel_yaw = 3.0
         curriculum_threshold = 0.75
-        num_commands = 3  # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
+        # 添加一个布尔开关控制高度模式
+        num_commands = 4  # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
+        creep_mode = False
         resampling_time = 5.0  # time before command are changed[s]
         heading_command = True  # if true: compute ang vel command from heading error, only work on adaptive group
         min_norm = 0.1
         zero_command_prob = 0.0
 
         class ranges:
-            lin_vel_x = [-1.0, 1.0]  # min max [m/s]
+            lin_vel_x = [-1.5, 1.5]  # min max [m/s]
             lin_vel_y = [-0.6, 0.6]  # min max [m/s]
             # lin_vel_x = [-1.7, 1.7]  # min max [m/s]
             # lin_vel_y = [-1.7, 1.7]  # min max [m/s]
@@ -263,6 +267,7 @@ class BipedCfgPF(BaseConfig):
         soft_dof_vel_limit = 1.0
         soft_torque_limit = 0.8
         base_height_target = 0.68 # 0.58
+        creep_base_height_target = 0.48
         feet_height_target = 0.10
         min_feet_distance = 0.115
         about_landing_threshold = 0.08
@@ -382,7 +387,7 @@ class BipedCfgPPOPF(BaseConfig):
         experiment_name = robot_type
         run_name = ""
         # load and resume
-        resume = True
+        resume = False
         load_run = "/home/zhengkr/limx_rl/pointfoot-legged-gym/logs/pointfoot_rough/PF_TRON1A/Aug06_20-19-06_"  # -1 = last run
         checkpoint = 4000  # -1 = last saved model
         resume_path = "None"  # updated from load_run and chkpt

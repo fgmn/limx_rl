@@ -52,6 +52,14 @@ class BipedPF(BaseTask):
         self._prepare_reward_function()
         self.init_done = True
 
+    def _init_buffers(self):
+        super()._init_buffers()
+        self.commands_scale = torch.tensor(
+            [self.obs_scales.lin_vel, self.obs_scales.lin_vel, self.obs_scales.ang_vel, 1],
+            device=self.device,
+            requires_grad=False,
+        )
+
     def step(self, actions):
         """Apply actions, simulate, call self.post_physics_step()
 
@@ -96,8 +104,43 @@ class BipedPF(BaseTask):
             self.reset_buf,
             self.extras,
             self.obs_history,
-            self.commands[:, :3] * self.commands_scale,
+            self.commands[:, :4] * self.commands_scale,
             self.critic_obs_buf # make sure critic_obs update in every for loop
+        )
+
+    def get_observations(self):
+        return (
+            self.obs_buf,
+            self.obs_history,
+            self.commands[:, :4] * self.commands_scale,
+            self.critic_obs_buf
+        )
+
+    def _post_physics_step_callback(self):
+        env_ids = (
+            (
+                self.episode_length_buf
+                % int(self.cfg.commands.resampling_time / self.dt)
+                == 0
+            )
+            .nonzero(as_tuple=False)
+            .flatten()
+        )
+        self._resample_commands(env_ids)
+        self._resample_gaits(env_ids)
+        self._step_contact_targets()
+
+        if self.cfg.commands.heading_command:
+            forward = quat_apply(self.base_quat, self.forward_vec)
+            heading = torch.atan2(forward[:, 1], forward[:, 0])
+            # 角速度指令是根据朝向推算的
+            self.commands[:, 2] = 1.0 * wrap_to_pi(self.commands[:, -1] - heading)
+
+        if self.cfg.terrain.measure_heights or self.cfg.terrain.critic_measure_heights:
+            self.measured_heights = self._get_heights()
+
+        self.base_height = torch.mean(
+            self.root_states[:, 2].unsqueeze(1) - self.measured_heights, dim=1
         )
 
     def _resample_commands(self, env_ids):
@@ -157,7 +200,11 @@ class BipedPF(BaseTask):
                 self.base_quat[zero_command_idx], self.forward_vec[zero_command_idx]
             )
             heading = torch.atan2(forward[:, 1], forward[:, 0])
-            self.commands[zero_command_idx, 3] = heading
+            self.commands[zero_command_idx, -1] = heading
+
+        if hasattr(self.cfg.commands, "creep_mode") and self.cfg.commands.creep_mode:
+            self.commands[env_ids, 3] = torch.rand(len(env_ids), device=self.device) < 0.5
+
 
     def _compute_torques(self, actions):
         """Compute torques from actions.
@@ -320,8 +367,42 @@ class BipedPF(BaseTask):
 
     def _reward_base_height(self):
         # Penalize base height away from target
+        if hasattr(self.cfg.commands, "creep_mode") and self.cfg.commands.creep_mode:
+            # 使用在_resample_commands中采样的布尔命令 self.commands[:, 3]
+            creep_flag = self.commands[:, 3].bool()
+            target_normal = torch.full((self.num_envs,), self.cfg.rewards.base_height_target, device=self.device)
+            target_creep = torch.full((self.num_envs,), self.cfg.rewards.creep_base_height_target, device=self.device)
+            base_height_target = torch.where(creep_flag, target_creep, target_normal)
+        else:
+            base_height_target = torch.full((self.num_envs,), self.cfg.rewards.base_height_target, device=self.device)
+        
+        
+        # original version
         base_height = torch.mean(self.root_states[:, 2].unsqueeze(1) - self.measured_heights, dim=1)
-        return torch.square(base_height - self.cfg.rewards.base_height_target)
+        return torch.square(base_height - base_height_target)
+
+        # HIMLoco version
+        # cur_footpos_translated = self.foot_positions - self.root_states[:, 0:3].unsqueeze(1)
+        # footpos_in_body_frame = torch.zeros(self.num_envs, len(self.feet_indices), 3, device=self.device)
+        # cur_footvel_translated = self.foot_velocities - self.root_states[:, 7:10].unsqueeze(1)
+        # footvel_in_body_frame = torch.zeros(self.num_envs, len(self.feet_indices), 3, device=self.device)
+        # for i in range(len(self.feet_indices)):
+        #     footpos_in_body_frame[:, i, :] = quat_rotate_inverse(self.base_quat, cur_footpos_translated[:, i, :])
+        #     footvel_in_body_frame[:, i, :] = quat_rotate_inverse(self.base_quat, cur_footvel_translated[:, i, :])
+        # height_error = torch.square(footpos_in_body_frame[:, :, 2] - base_height_target.unsqueeze(1)).view(self.num_envs, -1)
+        # foot_leteral_vel = torch.sqrt(torch.sum(torch.square(footvel_in_body_frame[:, :, :2]), dim=2)).view(self.num_envs, -1)
+        # return torch.sum(height_error * foot_leteral_vel, dim=1)
+
+        # cur_footpos_translated = self.foot_positions - self.root_states[:, 0:3].unsqueeze(1)
+        # footpos_in_body_frame = torch.zeros(self.num_envs, len(self.feet_indices), 3, device=self.device)
+        # cur_footvel_translated = self.foot_velocities - self.root_states[:, 7:10].unsqueeze(1)
+        # footvel_in_body_frame = torch.zeros(self.num_envs, len(self.feet_indices), 3, device=self.device)
+        # for i in range(len(self.feet_indices)):
+        #     footpos_in_body_frame[:, i, :] = quat_rotate_inverse(self.base_quat, cur_footpos_translated[:, i, :])
+        #     footvel_in_body_frame[:, i, :] = quat_rotate_inverse(self.base_quat, cur_footvel_translated[:, i, :])
+        # height_error = torch.square(footpos_in_body_frame[:, :, 2] - base_height_target.unsqueeze(1)).view(self.num_envs, -1)
+        # return torch.sum(height_error, dim=1)
+    
 
     def _reward_torques(self):
         # Penalize torques
