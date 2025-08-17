@@ -262,7 +262,7 @@ class BipedCfgPF(BaseConfig):
         )
         soft_dof_vel_limit = 1.0
         soft_torque_limit = 0.8
-        base_height_target = 0.68 # 0.58
+        base_height_target = 0.48 # 0.58
         feet_height_target = 0.10
         min_feet_distance = 0.115
         about_landing_threshold = 0.08
