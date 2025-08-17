@@ -382,7 +382,7 @@ class BipedCfgPPOPF(BaseConfig):
         experiment_name = robot_type
         run_name = ""
         # load and resume
-        resume = True
+        resume = False
         load_run = "/home/zhengkr/limx_rl/pointfoot-legged-gym/logs/pointfoot_rough/PF_TRON1A/Aug06_20-19-06_"  # -1 = last run
         checkpoint = 4000  # -1 = last saved model
         resume_path = "None"  # updated from load_run and chkpt
