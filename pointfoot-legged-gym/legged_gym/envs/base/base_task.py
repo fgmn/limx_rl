@@ -411,6 +411,23 @@ class BaseTask:
                 self.envs[0], self.actor_handles[0], termination_contact_names[i]
             )
             
+
+    def _init_base_height_points(self):
+        """ Returns points at which the height measurments are sampled (in base frame)
+
+        Returns:
+            [torch.Tensor]: Tensor of shape (num_envs, self.num_base_height_points, 3)
+        """
+        y = torch.tensor([-0.15, -0.1, -0.05, 0., 0.05, 0.1, 0.15], device=self.device, requires_grad=False)
+        x = torch.tensor([-0.15, -0.1, -0.05, 0., 0.05, 0.1, 0.15], device=self.device, requires_grad=False)
+        grid_x, grid_y = torch.meshgrid(x, y)
+
+        self.num_base_height_points = grid_x.numel()
+        points = torch.zeros(self.num_envs, self.num_base_height_points, 3, device=self.device, requires_grad=False)
+        points[:, :, 0] = grid_x.flatten()
+        points[:, :, 1] = grid_y.flatten()
+        return points
+
     def _get_heights(self, env_ids=None):
         """Samples heights of the terrain at required points around each robot.
             The points are offset by the base's position and rotated by the base's yaw
@@ -459,6 +476,51 @@ class BaseTask:
 
         return heights.view(self.num_envs, -1) * self.terrain.cfg.vertical_scale
     
+    def _get_base_heights(self, env_ids=None):
+        """ Samples heights of the terrain at required points around each robot.
+            The points are offset by the base's position and rotated by the base's yaw
+
+        Args:
+            env_ids (List[int], optional): Subset of environments for which to return the heights. Defaults to None.
+
+        Raises:
+            NameError: [description]
+
+        Returns:
+            [type]: [description]
+        """
+        if self.cfg.terrain.mesh_type == 'plane':
+            return self.root_states[:, 2].clone()
+        elif self.cfg.terrain.mesh_type == 'none':
+            raise NameError("Can't measure height with terrain mesh type 'none'")
+
+        if env_ids:
+            points = quat_apply_yaw(self.base_quat[env_ids].repeat(1, self.num_base_height_points), self.base_height_points[env_ids]) + (self.root_states[env_ids, :3]).unsqueeze(1)
+        else:
+            points = quat_apply_yaw(self.base_quat.repeat(1, self.num_base_height_points), self.base_height_points) + (self.root_states[:, :3]).unsqueeze(1)
+
+
+        points += self.terrain.cfg.border_size
+        points = (points/self.terrain.cfg.horizontal_scale).long()
+        px = points[:, :, 0].view(-1)
+        py = points[:, :, 1].view(-1)
+        px = torch.clip(px, 0, self.height_samples.shape[0]-2)
+        py = torch.clip(py, 0, self.height_samples.shape[1]-2)
+
+        heights1 = self.height_samples[px, py]
+        heights2 = self.height_samples[px+1, py]
+        heights3 = self.height_samples[px, py+1]
+        # using the min height of the three points
+        heights = torch.min(heights1, heights2)
+        heights = torch.min(heights, heights3)
+        # using the mean height of the three points
+        # heights = (heights1 + heights2 + heights3) / 3
+
+        base_height = heights.view(self.num_envs, -1) * self.terrain.cfg.vertical_scale
+        base_height = torch.mean(self.root_states[:, 2].unsqueeze(1) - base_height, dim=1)
+
+        return base_height
+
     def _process_rigid_shape_props(self, props, env_id):
         """Callback allowing to store/change/randomize the rigid shape properties of each environment.
             Called During environment creation.
@@ -473,17 +535,22 @@ class BaseTask:
         """
         if self.cfg.domain_rand.randomize_friction:
             if env_id == 0:
-                # prepare friction randomization
-                friction_range = self.cfg.domain_rand.friction_range
-                num_buckets = 64
-                bucket_ids = torch.randint(0, num_buckets, (self.num_envs, 1))
-                friction_buckets = torch_rand_float(
-                    friction_range[0], friction_range[1], (num_buckets, 1), device="cpu"
+                (
+                    min_friction,
+                    max_friction,
+                ) = self.cfg.domain_rand.friction_range
+                self.friction_coef = (
+                    torch.rand(
+                        self.num_envs,
+                        dtype=torch.float,
+                        device=self.device,
+                        requires_grad=False,
+                    )
+                    * (max_friction - min_friction)
+                    + min_friction
                 )
-                self.friction_coeffs = friction_buckets[bucket_ids]
-
             for s in range(len(props)):
-                props[s].friction = self.friction_coeffs[env_id]
+                props[s].friction = self.friction_coef[env_id]
         if self.cfg.domain_rand.randomize_restitution:
             if env_id == 0:
                 (
@@ -678,10 +745,6 @@ class BaseTask:
 
         if self.cfg.terrain.measure_heights or self.cfg.terrain.critic_measure_heights:
             self.measured_heights = self._get_heights()
-
-        self.base_height = torch.mean(
-            self.root_states[:, 2].unsqueeze(1) - self.measured_heights, dim=1
-        )
         
     def _parse_cfg(self, cfg):
         self.dt = self.cfg.control.decimation * self.sim_params.dt
@@ -1241,6 +1304,8 @@ class BaseTask:
             self.num_envs, -1, 3
         )  # shape: num_envs, num_bodies, xyz axis
 
+        self.last_contacts = torch.zeros(self.num_envs, len(self.feet_indices), dtype=torch.bool, device=self.device, requires_grad=False)
+
         # initialize some data used later on
         self.extras = {}
         self.noise_scale_vec = self._get_noise_scale_vec(self.cfg)
@@ -1399,10 +1464,10 @@ class BaseTask:
             (self.num_envs, self.num_bodies, 3), device=self.device, requires_grad=False
         )
         self.projected_gravity = quat_rotate_inverse(self.base_quat, self.gravity_vec)
-        self.base_height = torch.zeros_like(self.root_states[:, 2])
         if self.cfg.terrain.measure_heights or self.cfg.terrain.critic_measure_heights:
             self.height_points = self._init_height_points()
-        self.measured_heights = 0
+        self.measured_heights = self._get_heights()
+        self.base_height_points = self._init_base_height_points()
 
         # joint positions offsets and PD gains
         self.raw_default_dof_pos = torch.zeros(

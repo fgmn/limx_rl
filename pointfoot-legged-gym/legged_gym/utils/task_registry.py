@@ -38,7 +38,8 @@ from shutil import copyfile
 import ntpath
 
 from legged_gym.envs.vec_env import VecEnv
-from legged_gym.algorithm.on_policy_runner import OnPolicyRunner
+#  from legged_gym.algorithm.on_policy_runner import OnPolicyRunner
+from legged_gym.algorithm_cts.on_policy_cts_runner import OnPolicyCTSRunner
 
 from legged_gym import (
     LEGGED_GYM_ROOT_DIR,
@@ -205,7 +206,7 @@ class TaskRegistry:
             )
         train_cfg.runner.exptid = args.exptid
         train_cfg_dict = class_to_dict(train_cfg)
-        runner = OnPolicyRunner(
+        runner = OnPolicyCTSRunner(
             env, train_cfg_dict, self.log_dir, device=args.rl_device
         )
         # save resume path before creating a new log_dir
