@@ -35,9 +35,11 @@ from legged_gym import (
 import os, sys
 from legged_gym.utils.task_registry import task_registry
 
-robot_type = os.getenv("ROBOT_TYPE")
-terrain_exist = os.getenv("TERRAIN_EXIST", "False").lower() in ("true", "1", "t")
-nav_mode = 1
+# robot_type = os.getenv("ROBOT_TYPE")
+# terrain_exist = os.getenv("TERRAIN_EXIST", "False").lower() in ("true", "1", "t")
+robot_type = "PF_TRON1A"
+terrain_exist = 1
+nav_mode = 0
 
 if not robot_type:
     print("\033[1m\033[31mError: Please set the ROBOT_TYPE using 'export ROBOT_TYPE=<robot_type>'.\033[0m")

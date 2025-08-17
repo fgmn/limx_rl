@@ -31,7 +31,8 @@ from legged_gym.envs.base.base_config import BaseConfig
 from legged_gym import LEGGED_GYM_ROOT_DIR
 
 import os
-robot_type = os.getenv("ROBOT_TYPE")
+# robot_type = os.getenv("ROBOT_TYPE")
+robot_type = "PF_TRON1A"
 
 class BipedCfgPF(BaseConfig):
     class env:
@@ -104,7 +105,7 @@ class BipedCfgPF(BaseConfig):
         zero_command_prob = 0.0
 
         class ranges:
-            lin_vel_x = [-1.0, 1.0]  # min max [m/s]
+            lin_vel_x = [-2.0, 2.0]  # min max [m/s]
             lin_vel_y = [-0.6, 0.6]  # min max [m/s]
             # lin_vel_x = [-1.7, 1.7]  # min max [m/s]
             # lin_vel_y = [-1.7, 1.7]  # min max [m/s]
@@ -372,7 +373,7 @@ class BipedCfgPPOPF(BaseConfig):
         policy_class_name = "ActorCritic"
         algorithm_class_name = "PPO"
         num_steps_per_env = 24  # per iteration
-        max_iterations = 15000  # number of policy updates
+        max_iterations = 30000  # number of policy updates
 
         # logging
         logger = "tensorboard"
@@ -382,7 +383,7 @@ class BipedCfgPPOPF(BaseConfig):
         experiment_name = robot_type
         run_name = ""
         # load and resume
-        resume = True
+        resume = False
         load_run = "/home/zhengkr/limx_rl/pointfoot-legged-gym/logs/pointfoot_rough/PF_TRON1A/Aug06_20-19-06_"  # -1 = last run
         checkpoint = 4000  # -1 = last saved model
         resume_path = "None"  # updated from load_run and chkpt
