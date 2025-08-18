@@ -90,6 +90,8 @@ class BipedCfgPF(BaseConfig):
             0.75  # slopes above this threshold will be corrected to vertical surfaces
         )
 
+        debug_viz = False
+
     class commands:
         curriculum = True
         smooth_max_lin_vel_x = 2.0
@@ -105,8 +107,8 @@ class BipedCfgPF(BaseConfig):
         zero_command_prob = 0.0
 
         class ranges:
-            lin_vel_x = [-1.0, 1.0]  # min max [m/s]
-            lin_vel_y = [-0.6, 0.6]  # min max [m/s]
+            lin_vel_x = [-0.5, 0.5]  # min max [m/s]
+            lin_vel_y = [-0.3, 0.3]  # min max [m/s]
             # lin_vel_x = [-1.7, 1.7]  # min max [m/s]
             # lin_vel_y = [-1.7, 1.7]  # min max [m/s]
             ang_vel_yaw = [-1, 1]  # min max [rad/s]
@@ -263,7 +265,7 @@ class BipedCfgPF(BaseConfig):
         )
         soft_dof_vel_limit = 1.0
         soft_torque_limit = 0.8
-        base_height_target = 0.48 # 0.58
+        base_height_target = 0.58 # 0.58
         feet_height_target = 0.10
         min_feet_distance = 0.115
         about_landing_threshold = 0.08
