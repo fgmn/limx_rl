@@ -90,6 +90,8 @@ class BipedPF(BaseTask):
         # return clipped obs, clipped states (None), rewards, dones and infos
         clip_obs = self.cfg.normalization.clip_observations
         self.obs_buf = torch.clip(self.obs_buf, -clip_obs, clip_obs)
+        # 关闭指令
+        self.commands[:, :3] = 0
         return (
             self.obs_buf,
             self.rew_buf,
@@ -100,64 +102,123 @@ class BipedPF(BaseTask):
             self.critic_obs_buf # make sure critic_obs update in every for loop
         )
 
+    # --- 新增: 让机器人随机在地上初始化 ---
+    def _reset_root_states(self, env_ids):
+        """将所选环境的根状态重置为“贴地、随机姿态”，并清零速度。
+        这样每次重置都会在地面附近随机姿态开始，利于学习起身/站立。
+        Args:
+            env_ids (List[int]): 需要重置的环境ID
+        """
+        if len(env_ids) == 0:
+            return
+        # 将位置放到对应地形原点处，z 设为地面略上方，避免初始穿透
+        self.root_states[env_ids] = self.base_init_state
+        self.root_states[env_ids, :3] = self.env_origins[env_ids]
+        # 地面略上方（2cm），让仿真开始时自然落地
+        self.root_states[env_ids, 2] = self.env_origins[env_ids, 2] + 0.02
+
+        # 随机欧拉角（roll, pitch, yaw），范围 [-pi, pi]
+        n = len(env_ids)
+        pi = self.pi.item()
+        roll = (torch.rand(n, device=self.device) * 2 * pi) - pi
+        pitch = (torch.rand(n, device=self.device) * 2 * pi) - pi
+        yaw = (torch.rand(n, device=self.device) * 2 * pi) - pi
+        quat = quat_from_euler_xyz(roll, pitch, yaw)
+        self.root_states[env_ids, 3:7] = quat
+
+        # 线速度与角速度清零
+        self.root_states[env_ids, 7:13] = 0.0
+
+        # 同步到仿真
+        env_ids_int32 = env_ids.to(dtype=torch.int32)
+        self.gym.set_actor_root_state_tensor_indexed(
+            self.sim,
+            gymtorch.unwrap_tensor(self.root_states),
+            gymtorch.unwrap_tensor(env_ids_int32),
+            len(env_ids_int32),
+        )
+
+    # --- 新增: 放宽终止条件，允许从倒地状态学习起身 ---
+    def check_termination(self):
+        """仅根据超时与越界来结束回合，移除“未直立/基座接触”导致的快速终止。"""
+        # 超时
+        self.time_out_buf = (self.episode_length_buf > self.max_episode_length)
+
+        # 越界（保留与父类一致的越界逻辑）
+        if self.cfg.terrain.mesh_type in ["heightfield", "trimesh"]:
+            self.edge_reset_buf = self.base_position[:, 0] > self.terrain_x_max - 1
+            self.edge_reset_buf |= self.base_position[:, 0] < self.terrain_x_min + 1
+            self.edge_reset_buf |= self.base_position[:, 1] > self.terrain_y_max - 1
+            self.edge_reset_buf |= self.base_position[:, 1] < self.terrain_y_min + 1
+        else:
+            self.edge_reset_buf = torch.zeros(
+                self.num_envs, device=self.device, dtype=torch.bool
+            )
+
+        # 不累计 fail_buf，从而避免“未直立/基座接触”导致的强制重置
+        self.reset_buf = self.time_out_buf | self.edge_reset_buf
+
     def _resample_commands(self, env_ids):
         """Randommly select commands of some environments
 
         Args:
             env_ids (List[int]): Environments ids for which new commands are needed
         """
-        self.commands[env_ids, 0] = (
-            self.command_ranges["lin_vel_x"][env_ids, 1]
-            - self.command_ranges["lin_vel_x"][env_ids, 0]
-        ) * torch.rand(len(env_ids), device=self.device) + self.command_ranges[
-            "lin_vel_x"
-        ][
-            env_ids, 0
-        ]
-        self.commands[env_ids, 1] = (
-            self.command_ranges["lin_vel_y"][env_ids, 1]
-            - self.command_ranges["lin_vel_y"][env_ids, 0]
-        ) * torch.rand(len(env_ids), device=self.device) + self.command_ranges[
-            "lin_vel_y"
-        ][
-            env_ids, 0
-        ]
-        self.commands[env_ids, 2] = (
-            self.command_ranges["ang_vel_yaw"][env_ids, 1]
-            - self.command_ranges["ang_vel_yaw"][env_ids, 0]
-        ) * torch.rand(len(env_ids), device=self.device) + self.command_ranges[
-            "ang_vel_yaw"
-        ][
-            env_ids, 0
-        ]
-        if self.cfg.commands.heading_command:
-            self.commands[env_ids, 3] = torch_rand_float(
-                self.command_ranges["heading"][0],
-                self.command_ranges["heading"][1],
-                (len(env_ids), 1),
-                device=self.device,
-            ).squeeze(1)
+        # self.commands[env_ids, 0] = (
+        #     self.command_ranges["lin_vel_x"][env_ids, 1]
+        #     - self.command_ranges["lin_vel_x"][env_ids, 0]
+        # ) * torch.rand(len(env_ids), device=self.device) + self.command_ranges[
+        #     "lin_vel_x"
+        # ][
+        #     env_ids, 0
+        # ]
+        # self.commands[env_ids, 1] = (
+        #     self.command_ranges["lin_vel_y"][env_ids, 1]
+        #     - self.command_ranges["lin_vel_y"][env_ids, 0]
+        # ) * torch.rand(len(env_ids), device=self.device) + self.command_ranges[
+        #     "lin_vel_y"
+        # ][
+        #     env_ids, 0
+        # ]
+        # self.commands[env_ids, 2] = (
+        #     self.command_ranges["ang_vel_yaw"][env_ids, 1]
+        #     - self.command_ranges["ang_vel_yaw"][env_ids, 0]
+        # ) * torch.rand(len(env_ids), device=self.device) + self.command_ranges[
+        #     "ang_vel_yaw"
+        # ][
+        #     env_ids, 0
+        # ]
+        # if self.cfg.commands.heading_command:
+        #     self.commands[env_ids, 3] = torch_rand_float(
+        #         self.command_ranges["heading"][0],
+        #         self.command_ranges["heading"][1],
+        #         (len(env_ids), 1),
+        #         device=self.device,
+        #     ).squeeze(1)
 
-        # set small commands to zero
-        # self.commands[env_ids, :2] *= (
-        #     torch.norm(self.commands[env_ids, :2], dim=1) > self.cfg.commands.min_norm
-        # ).unsqueeze(1)
-        zero_command_idx = (
-            (
-                torch_rand_float(0, 1, (len(env_ids), 1), device=self.device)
-                > self.cfg.commands.zero_command_prob
-            )
-            .squeeze(1)
-            .nonzero(as_tuple=False)
-            .flatten()
-        )
-        self.commands[zero_command_idx, :3] = 0
-        if self.cfg.commands.heading_command:
-            forward = quat_apply(
-                self.base_quat[zero_command_idx], self.forward_vec[zero_command_idx]
-            )
-            heading = torch.atan2(forward[:, 1], forward[:, 0])
-            self.commands[zero_command_idx, 3] = heading
+        # # set small commands to zero
+        # # self.commands[env_ids, :2] *= (
+        # #     torch.norm(self.commands[env_ids, :2], dim=1) > self.cfg.commands.min_norm
+        # # ).unsqueeze(1)
+        # zero_command_idx = (
+        #     (
+        #         torch_rand_float(0, 1, (len(env_ids), 1), device=self.device)
+        #         > self.cfg.commands.zero_command_prob
+        #     )
+        #     .squeeze(1)
+        #     .nonzero(as_tuple=False)
+        #     .flatten()
+        # )
+        # self.commands[zero_command_idx, :3] = 0
+
+
+        # if self.cfg.commands.heading_command:
+        #     forward = quat_apply(
+        #         self.base_quat[zero_command_idx], self.forward_vec[zero_command_idx]
+        #     )
+        #     heading = torch.atan2(forward[:, 1], forward[:, 0])
+        #     self.commands[zero_command_idx, 3] = heading
+        pass
 
     def _compute_torques(self, actions):
         """Compute torques from actions.
@@ -351,17 +412,12 @@ class BipedPF(BaseTask):
         out_of_limits += (self.dof_pos - self.dof_pos_limits[:, 1]).clip(min=0.0)
         return torch.sum(out_of_limits, dim=1)
 
+    # 不使用速度跟踪，返回零奖励
     def _reward_tracking_lin_vel(self):
-        # Tracking of linear velocity commands (xy axes)
-        lin_vel_error = torch.sum(
-            torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1
-        )
-        return torch.exp(-lin_vel_error / self.cfg.rewards.tracking_sigma)
+        return torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False)
 
     def _reward_tracking_ang_vel(self):
-        # Tracking of angular velocity commands (yaw)
-        ang_vel_error = torch.square(self.commands[:, 2] - self.base_ang_vel[:, 2])
-        return torch.exp(-ang_vel_error / self.cfg.rewards.ang_tracking_sigma)
+        return torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False)
 
     def _reward_tracking_contacts_shaped_force(self):
         foot_forces = torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1)

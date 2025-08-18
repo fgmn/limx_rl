@@ -90,6 +90,8 @@ class BipedCfgPF(BaseConfig):
             0.75  # slopes above this threshold will be corrected to vertical surfaces
         )
 
+        debug_viz = False
+
     class commands:
         curriculum = True
         smooth_max_lin_vel_x = 2.0
@@ -236,7 +238,7 @@ class BipedCfgPF(BaseConfig):
             tracking_ang_vel = 0.5
 
             # regulation related rewards
-            base_height = -2
+            base_height = -50
             lin_vel_z = -0.5
             ang_vel_xy = -0.05
             torques = -0.00008
