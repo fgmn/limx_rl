@@ -37,7 +37,8 @@ from legged_gym.utils.task_registry import task_registry
 
 # robot_type = os.getenv("ROBOT_TYPE")
 robot_type = "PF_TRON1A"
-terrain_exist = os.getenv("TERRAIN_EXIST", "False").lower() in ("true", "1", "t")
+# terrain_exist = os.getenv("TERRAIN_EXIST", "False").lower() in ("true", "1", "t")
+terrain_exist = 0
 nav_mode = 0
 
 if not robot_type:
