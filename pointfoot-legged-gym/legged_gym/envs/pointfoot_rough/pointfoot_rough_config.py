@@ -90,6 +90,8 @@ class BipedCfgPF(BaseConfig):
             0.75  # slopes above this threshold will be corrected to vertical surfaces
         )
 
+        debug_viz = False
+
     class commands:
         curriculum = True
         smooth_max_lin_vel_x = 2.0
