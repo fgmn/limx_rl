@@ -221,7 +221,7 @@ class TaskRegistry:
                 load_run=train_cfg.runner.load_run,
                 checkpoint=train_cfg.runner.checkpoint,
             )
-            print(f"Loading model from: {resume_path}")
+            print(f"\033[1m\033[32mLoading model from: {resume_path}\033[0m")
             runner.load(resume_path)
         return runner, train_cfg
 

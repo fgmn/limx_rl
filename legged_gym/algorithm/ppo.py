@@ -227,8 +227,8 @@ class PPO:
                 student_encoder_out_batch = self.student_encoder.encode(obs_history_batch)
                 student_action_batch = self.actor_critic.act( torch.cat((student_encoder_out_batch.detach(), obs_batch, commands_batch), dim=-1) )
 
+                teacher_encoder_out_target_batch = self.teacher_encoder.encode(torch.cat((critic_obs_batch, obs_history_batch), dim=-1)).detach()
                 if not student_finetune_mode:
-                    teacher_encoder_out_target_batch = self.teacher_encoder.encode(torch.cat((critic_obs_batch, obs_history_batch), dim=-1)).detach()
                     vel_teacher_encoder_out_target_batch = torch.cat((critic_obs_batch[:, :3], teacher_encoder_out_target_batch), dim=-1)
                     teacher_action_target_batch = self.teacher_inference_actor( torch.cat(
                                                                                 (vel_teacher_encoder_out_target_batch, obs_batch, commands_batch),
