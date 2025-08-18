@@ -238,7 +238,7 @@ class BipedCfgPF(BaseConfig):
             tracking_ang_vel = 0.5
 
             # regulation related rewards
-            base_height = -2
+            base_height = -20
             lin_vel_z = -0.5
             ang_vel_xy = -0.05
             torques = -0.00008
