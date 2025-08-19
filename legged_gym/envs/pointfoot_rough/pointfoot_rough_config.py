@@ -49,7 +49,8 @@ class BipedCfgPF(BaseConfig):
         fail_to_terminal_time_s = 1.0
         teacher_mode = False
         #  teacher_mode = True
-        student_finetune_mode = False
+        #  student_finetune_mode = False
+        student_finetune_mode = True
 
     class terrain:
         mesh_type = "trimesh"  # "heightfield" # none, plane, heightfield or trimesh
@@ -395,11 +396,11 @@ class BipedCfgPPOPF(BaseConfig):
         logger = "tensorboard"
         exptid = ""
         wandb_project = "legged_gym_PF"
-        save_interval = 500  # check for potential saves every this many iterations
+        save_interval = 100  # check for potential saves every this many iterations
         experiment_name = robot_type
         run_name = ""
         # load and resume
         resume = True
         load_run = "Aug19_Teacher"  # -1 = last run
-        checkpoint = 13000  # -1 = last saved model
+        checkpoint = 20000  # -1 = last saved model
         resume_path = "None"  # updated from load_run and chkpt

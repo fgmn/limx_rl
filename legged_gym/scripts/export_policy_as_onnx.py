@@ -20,7 +20,7 @@ class policy:
 
 class mlp_encoder:
         output_detach = True
-        num_input_dim = 30 * 11
+        num_input_dim = 30 * 10
         num_output_dim = 3 + 32
         hidden_dims = [256, 128]
         activation = "elu"
@@ -54,8 +54,8 @@ def export_policy_as_onnx(resume_path):
     # actor_critic
     actor_critic_class = eval("ActorCritic")
 
-    actor_input_dim = 31+ 35 + 3
-    critic_input_dim = 36 + 30 + 117 + 4
+    actor_input_dim = 30+ 35 + 3
+    critic_input_dim = 36 + 30 + 117 + 3
     actor_critic = actor_critic_class(
         actor_input_dim, critic_input_dim, 6, **class_to_dict(policy)
     ).to("cpu")
@@ -86,5 +86,5 @@ def export_policy_as_onnx(resume_path):
 if __name__ == '__main__':
     
     # check ROBOT_TYPE validity
-    resume_path = "/home/syw/Downloads/model_29500.pt"
+    resume_path = "/home/syw/Downloads/model_20300.pt"
     export_policy_as_onnx(resume_path)
